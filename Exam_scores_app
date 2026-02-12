@@ -1,0 +1,100 @@
+import streamlit as st
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
+
+st.title("Exam Score Prediction App")
+
+data_path = "data/train.csv"
+df = pd.read_csv(data_path)
+st.success("Dataset loaded!")
+
+
+df['sleep_dev'] = abs(df['sleep_hours'] - 7)
+df['study_effort'] = df['study_hours'] * df['class_attendance']
+df['study_hours_sq'] = df['study_hours'] ** 2
+
+
+X = df.drop(['exam_score', 'id'], axis=1, errors='ignore')
+y = df['exam_score']
+
+
+numeric_cols = X.select_dtypes(include=['int64','float64']).columns.tolist()
+categorical_cols = X.select_dtypes(include='object').columns.tolist()
+
+numeric_transformer = SimpleImputer(strategy='median')
+categorical_transformer = Pipeline([
+    ('imputer', SimpleImputer(strategy='most_frequent')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+preprocessor = ColumnTransformer([
+    ('num', numeric_transformer, numeric_cols),
+    ('cat', categorical_transformer, categorical_cols)
+])
+
+
+train_x, valid_x, train_y, valid_y = train_test_split(X, y, test_size=0.2, random_state=0)
+
+X_train = preprocessor.fit_transform(train_x)
+X_valid = preprocessor.transform(valid_x)
+
+
+model = RandomForestRegressor(
+    n_estimators=20, 
+    max_depth=5,    
+    random_state=0,
+    n_jobs=-1
+)
+model.fit(X_train, train_y)
+
+
+valid_pred = model.predict(X_valid)
+mae = mean_absolute_error(valid_y, valid_pred)
+st.write(f"Validation MAE: {mae:.2f}")
+
+
+st.header("Select Student Features for Prediction")
+
+age = st.number_input("Age", min_value=int(df['age'].min()), max_value=int(df['age'].max()), value=20)
+gender = st.selectbox("Gender", df['gender'].unique().tolist())
+course = st.selectbox("Course", df['course'].unique().tolist())
+study_hours = st.number_input("Study Hours", min_value=0.0, max_value=12.0, value=5.0)
+class_attendance = st.number_input("Class Attendance (%)", min_value=0.0, max_value=100.0, value=80.0)
+internet_access = st.selectbox("Internet Access", df['internet_access'].unique().tolist())
+sleep_hours = st.number_input("Sleep Hours", min_value=0.0, max_value=12.0, value=7.0)
+sleep_quality = st.selectbox("Sleep Quality", df['sleep_quality'].unique().tolist())
+study_method = st.selectbox("Study Method", df['study_method'].unique().tolist())
+facility_rating = st.number_input("Facility Rating (1-5)", min_value=1, max_value=5, value=3)
+exam_difficulty = st.number_input("Exam Difficulty (1-5)", min_value=1, max_value=5, value=3)
+
+
+input_df = pd.DataFrame({
+    "age": [age],
+    "gender": [gender],
+    "course": [course],
+    "study_hours": [study_hours],
+    "class_attendance": [class_attendance],
+    "internet_access": [internet_access],
+    "sleep_hours": [sleep_hours],
+    "sleep_quality": [sleep_quality],
+    "study_method": [study_method],
+    "facility_rating": [facility_rating],
+    "exam_difficulty": [exam_difficulty]
+})
+
+# Feature engineering
+input_df['sleep_dev'] = abs(input_df['sleep_hours'] - 7)
+input_df['study_effort'] = input_df['study_hours'] * input_df['class_attendance']
+input_df['study_hours_sq'] = input_df['study_hours'] ** 2
+
+
+X_input = preprocessor.transform(input_df)
+pred = model.predict(X_input)[0]
+
+st.success(f"Predicted Exam Score: {pred:.2f}")
